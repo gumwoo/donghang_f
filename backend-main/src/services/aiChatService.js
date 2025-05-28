@@ -689,92 +689,42 @@ class AIChatService {
     return '💰';
   }
 
-  // 날짜를 사용자 친화적 형태로 포맷팅 (KST 기준)
-  formatDateForResponse(dateString) {
-    if (!dateString) return '오늘';
-    
-    // 한국 시간 기준으로 계산
-    const getKSTDateString = (offsetDays = 0) => {
-      const now = new Date();
-      const kstOffset = 9 * 60; // UTC+9
-      const kstTime = new Date(now.getTime() + (kstOffset * 60 * 1000));
-      kstTime.setDate(kstTime.getDate() + offsetDays);
-      return kstTime.toISOString().split('T')[0];
-    };
-    
-    const todayKST = getKSTDateString(0);
-    const yesterdayKST = getKSTDateString(-1);
-    
-    logger.info('📅 날짜 비교 - 입력:', dateString, '오늘(KST):', todayKST, '어제(KST):', yesterdayKST);
-    
-    if (dateString === todayKST) {
-      return '오늘';
-    } else if (dateString === yesterdayKST) {
-      return '어제';
-    } else {
-      const date = new Date(dateString + 'T00:00:00');
-      const month = date.getMonth() + 1;
-      const day = date.getDate();
-      return `${month}월 ${day}일`;
-    }
-  }
-
   extractDateFromText(text) {
-    // 한국 시간(KST) 기준으로 날짜 계산
-    const getKSTDate = (date = new Date()) => {
-      const kstOffset = 9 * 60; // 한국은 UTC+9
-      const kstTime = new Date(date.getTime() + (kstOffset * 60 * 1000));
-      return kstTime.toISOString().split('T')[0];
-    };
-    
-    const getKSTDateWithOffset = (offsetDays = 0) => {
-      const now = new Date();
-      const kstOffset = 9 * 60; // UTC+9
-      const kstTime = new Date(now.getTime() + (kstOffset * 60 * 1000));
-      kstTime.setDate(kstTime.getDate() + offsetDays);
-      return kstTime.toISOString().split('T')[0];
-    };
+    const today = new Date();
     
     if (text.includes('오늘')) {
-      const today = getKSTDateWithOffset(0);
-      logger.info('📅 오늘 날짜 (KST):', today);
-      return today;
+      return today.toISOString().split('T')[0];
     }
     
     if (text.includes('어제')) {
-      const yesterday = getKSTDateWithOffset(-1);
-      logger.info('📅 어제 날짜 (KST):', yesterday);
-      return yesterday;
+      const yesterday = new Date(today);
+      yesterday.setDate(today.getDate() - 1);
+      return yesterday.toISOString().split('T')[0];
     }
     
     if (text.includes('그제') || text.includes('그저께')) {
-      const dayBefore = getKSTDateWithOffset(-2);
-      logger.info('📅 그제 날짜 (KST):', dayBefore);
-      return dayBefore;
+      const dayBeforeYesterday = new Date(today);
+      dayBeforeYesterday.setDate(today.getDate() - 2);
+      return dayBeforeYesterday.toISOString().split('T')[0];
     }
     
-    const daysAgoPattern = /(\d+)\s*일\s*전/;
+    const daysAgoPattern = /(\\d+)\\s*일\\s*전/;
     const daysAgoMatch = text.match(daysAgoPattern);
     if (daysAgoMatch) {
       const daysAgo = parseInt(daysAgoMatch[1]);
-      const targetDate = getKSTDateWithOffset(-daysAgo);
-      logger.info(`📅 ${daysAgo}일 전 날짜 (KST):`, targetDate);
-      return targetDate;
+      const targetDate = new Date(today);
+      targetDate.setDate(today.getDate() - daysAgo);
+      return targetDate.toISOString().split('T')[0];
     }
     
-    const monthDayPattern = /(?:(\d{1,2})월\s*)?(\d{1,2})일/;
+    const monthDayPattern = /(?:(\\d{1,2})월\\s*)?(\\d{1,2})일/;
     const monthDayMatch = text.match(monthDayPattern);
     if (monthDayMatch) {
-      // KST 기준 오늘 날짜 객체 생성
-      const now = new Date();
-      const kstOffset = 9 * 60;
-      const kstToday = new Date(now.getTime() + (kstOffset * 60 * 1000));
-      
-      const month = monthDayMatch[1] ? parseInt(monthDayMatch[1]) : kstToday.getMonth() + 1;
+      const month = monthDayMatch[1] ? parseInt(monthDayMatch[1]) : today.getMonth() + 1;
       const day = parseInt(monthDayMatch[2]);
       
-      let year = kstToday.getFullYear();
-      const currentMonth = kstToday.getMonth() + 1;
+      let year = today.getFullYear();
+      const currentMonth = today.getMonth() + 1;
       
       if (month > currentMonth) {
         year -= 1;
@@ -785,9 +735,7 @@ class AIChatService {
       const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
       const dd = String(targetDate.getDate()).padStart(2, '0');
       
-      const result = `${yyyy}-${mm}-${dd}`;
-      logger.info(`📅 ${month}월 ${day}일 날짜:`, result);
-      return result;
+      return `${yyyy}-${mm}-${dd}`;
     }
     
     return null;
@@ -992,163 +940,6 @@ class AIChatService {
         };
       }
       
-      // 4. 날짜 확인 대기 상태 처리 (우선순위 높음)
-      if (sessionState.waitingForDateConfirmation && sessionState.pendingExpenseData) {
-        logger.info('날짜 확인 응답 처리 중');
-        const dateText = this.extractDateFromText(message);
-        
-        if (dateText) {
-          // 날짜가 인식된 경우
-          const expenseData = {
-            ...sessionState.pendingExpenseData,
-            transactionDate: dateText
-          };
-          
-          const saved = await this.saveExpenseData(expenseData, userId);
-          const response = this.generateSmartResponse(expenseData, saved, this.formatDateForResponse(dateText));
-          
-          // 세션 상태 초기화
-          this.updateSessionState(sessionId, {
-            pendingExpenseData: null,
-            waitingForDateConfirmation: false
-          });
-          
-          return {
-            type: 'expense_saved',
-            content: response,
-            expenseData: expenseData,
-            saved: saved,
-            needsVoice: true
-          };
-        } else {
-          // 날짜를 인식하지 못한 경우
-          return {
-            type: 'date_request_retry',
-            content: '날짜를 정확히 말씀해주세요. 예: "오늘", "어제", "5월 15일"',
-            needsVoice: true
-          };
-        }
-      }
-
-      // 5. 소비내역 입력 감지 및 처리 (소비내역 조회보다 먼저)
-      
-      // 임시 간단 파싱 함수
-      const simpleParseExpense = (input) => {
-        const text = input.toLowerCase().trim();
-        logger.info('🔍 간단 파싱 - 입력:', text);
-        
-        // 5000원, 5천원, 6만원 등 금액 추출
-        let amount = 0;
-        
-        // 만원 패턴 (6만원, 6만 원)
-        if (text.includes('만원') || text.includes('만 원')) {
-          const match = text.match(/(\d+)\s*만/);
-          if (match) {
-            amount = parseInt(match[1]) * 10000;
-            logger.info('💰 만원 패턴 매치:', match[1], '→', amount);
-          }
-        }
-        // 천원 패턴 (5천원, 5천 원)
-        else if (text.includes('천원') || text.includes('천 원')) {
-          const match = text.match(/(\d+)\s*천/);
-          if (match) {
-            amount = parseInt(match[1]) * 1000;
-            logger.info('💰 천원 패턴 매치:', match[1], '→', amount);
-          }
-        }
-        // 일반 원 패턴 (5000원, 60000원)
-        else if (text.includes('원')) {
-          const match = text.match(/(\d+(?:,\d+)?)\s*원/);
-          if (match) {
-            amount = parseInt(match[1].replace(/,/g, ''));
-            logger.info('💰 원 패턴 매치:', match[1], '→', amount);
-          }
-        }
-        
-        if (amount === 0) {
-          logger.info('❌ 금액을 찾을 수 없음');
-          return null;
-        }
-        
-        // 소비 키워드 확인
-        const keywords = ['먹었', '점심', '저녁', '아침', '썼', '샀', '구매', '쇼핑했', '쇼핑', '지출', '결제', '사용'];
-        const hasKeyword = keywords.some(k => text.includes(k));
-        logger.info('🔑 키워드 체크:', hasKeyword, '키워드들:', keywords.filter(k => text.includes(k)));
-        
-        if (!hasKeyword) {
-          logger.info('❌ 소비 키워드가 없음');
-          return null;
-        }
-        
-        // 카테고리와 가맹점 분류
-        let category = '기타';
-        let merchantName = '일반가맹점';
-        
-        if (text.includes('먹었') || text.includes('점심') || text.includes('저녁') || text.includes('아침')) {
-          category = '식비';
-          merchantName = '일반음식점';
-        } else if (text.includes('쇼핑') || text.includes('구매') || text.includes('샀')) {
-          category = '쇼핑';
-          merchantName = '일반상점';
-        } else if (text.includes('교통') || text.includes('버스') || text.includes('지하철') || text.includes('택시')) {
-          category = '교통비';
-          merchantName = '교통수단';
-        } else if (text.includes('병원') || text.includes('약국') || text.includes('의료')) {
-          category = '의료비';
-          merchantName = '의료기관';
-        }
-        
-        const result = {
-          amount: amount,
-          category: category,
-          merchantName: merchantName,
-          originalText: input,
-          transactionDate: null,
-          needsDateConfirmation: true
-        };
-        
-        logger.info('✅ 파싱 성공:', result);
-        return result;
-      };
-      
-      const expenseData = simpleParseExpense(message);
-      logger.info('▶▶▶ expenseData:', expenseData);
-      
-      if (expenseData) {
-        logger.info('소비 내역 감지:', expenseData);
-        
-        if (expenseData.needsDateConfirmation) {
-          // 날짜 확인이 필요한 경우
-          this.updateSessionState(sessionId, {
-            pendingExpenseData: expenseData,
-            waitingForDateConfirmation: true
-          });
-          
-          const amount = Math.floor(expenseData.amount).toLocaleString();
-          const category = expenseData.category;
-          const merchant = expenseData.merchantName;
-          
-          return {
-            type: 'expense_date_request',
-            content: `${merchant}에서 ${amount}원 ${category} 지출이군요! 언제 사용하셨나요? (예: 오늘, 어제, 5월 15일)`,
-            needsVoice: true,
-            expenseData: expenseData
-          };
-        } else {
-          // 날짜 정보가 이미 있는 경우 바로 저장
-          const saved = await this.saveExpenseData(expenseData, userId);
-          const response = this.generateSmartResponse(expenseData, saved);
-          
-          return {
-            type: 'expense_saved',
-            content: response,
-            expenseData: expenseData,
-            saved: saved,
-            needsVoice: true
-          };
-        }
-      }
-
       // 6. 소비내역 조회 요청 감지 (개선됨)
       if (this.isExpenseInquiry(message)) {
         logger.info('소비내역 조회 요청 감지');
@@ -1177,8 +968,8 @@ class AIChatService {
       }
 
       
-      // 7. 기본 오프라인 응답
-
+      // 3. 기존 소비내역 처리 로직
+      const expenseData = this.parseExpenseFromInput(message, true);
       
       if (expenseData && !expenseData.needsDateConfirmation) {
         logger.info('일반 소비 내역 감지:', expenseData);
@@ -1194,7 +985,7 @@ class AIChatService {
         };
       }
       
-
+      // 4. 기본 오프라인 응답
       const response = this.getNaturalResponse(message);
       return {
         type: 'general',

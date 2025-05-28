@@ -1,6 +1,5 @@
 const Consumption = require('../models/Consumption');
 const User = require('../models/User');
-const NotificationService = require('./NotificationService');
 
 class ConsumptionService {
   /**
@@ -55,7 +54,7 @@ class ConsumptionService {
       }));
 
     } catch (error) {
-      console.error('❌ ConsumptionService.getAllConsumptionsByUser Error:', error);
+      logger.error('❌ ConsumptionService.getAllConsumptionsByUser Error:', error);
       throw error;
     }
   }
@@ -98,51 +97,10 @@ class ConsumptionService {
 
       console.log(`💰 Consumption created - No: ${consumption.consumptionNo}, UserNo: ${userNo}, Amount: ${amount}`);
 
-      // 소비내역 등록 알림 생성
-      try {
-        const formattedAmount = Math.floor(amount).toLocaleString();
-        const notificationTitle = '💰 소비내역이 등록되었습니다';
-        const notificationContent = `${merchantName}에서 ${formattedAmount}원 ${category} 지출이 기록되었습니다.`;
-        
-        await NotificationService.createNotification({
-          userNo,
-          title: notificationTitle,
-          content: notificationContent,
-          notificationType: 'PAYMENT',
-          priority: 'NORMAL',
-          relatedId: consumption.consumptionNo,
-          relatedType: 'consumption'
-        });
-        
-        console.log(`🔔 Consumption notification created for UserNo: ${userNo}`);
-        
-        // 큰 금액 소비 시 이상 징후 알림 생성 (10만원 이상)
-        if (amount >= 100000) {
-          const anomalyTitle = '⚠️ 큰 금액 소비 감지';
-          const anomalyContent = `${formattedAmount}원의 큰 금액이 ${merchantName}에서 사용되었습니다. 본인이 사용한 것이 맞는지 확인해주세요.`;
-          
-          await NotificationService.createNotification({
-            userNo,
-            title: anomalyTitle,
-            content: anomalyContent,
-            notificationType: 'ANOMALY',
-            priority: 'HIGH',
-            relatedId: consumption.consumptionNo,
-            relatedType: 'consumption'
-          });
-          
-          console.log(`⚠️ Anomaly notification created for large amount: ${formattedAmount}원`);
-        }
-        
-      } catch (notificationError) {
-        console.error('알림 생성 실패 (소비내역 등록은 성공):', notificationError);
-        // 알림 생성 실패해도 소비내역 등록은 성공으로 처리
-      }
-
       return consumption.consumptionNo;
 
     } catch (error) {
-      console.error('❌ ConsumptionService.createConsumption Error:', error);
+      logger.error('❌ ConsumptionService.createConsumption Error:', error);
       throw error;
     }
   }
@@ -165,12 +123,12 @@ class ConsumptionService {
 
       await consumption.update(updateData);
 
-      console.log(`🔄 Consumption updated - No: ${consumptionNo}, UserNo: ${userNo}`);
+      logger.info(`🔄 Consumption updated - No: ${consumptionNo}, UserNo: ${userNo}`);
 
       return true;
 
     } catch (error) {
-      console.error('❌ ConsumptionService.updateConsumption Error:', error);
+      logger.error('❌ ConsumptionService.updateConsumption Error:', error);
       throw error;
     }
   }
@@ -193,12 +151,12 @@ class ConsumptionService {
 
       await consumption.destroy();
 
-      console.log(`🗑️ Consumption deleted - No: ${consumptionNo}, UserNo: ${userNo}`);
+      logger.info(`🗑️ Consumption deleted - No: ${consumptionNo}, UserNo: ${userNo}`);
 
       return true;
 
     } catch (error) {
-      console.error('❌ ConsumptionService.deleteConsumption Error:', error);
+      logger.error('❌ ConsumptionService.deleteConsumption Error:', error);
       throw error;
     }
   }
@@ -258,7 +216,7 @@ class ConsumptionService {
       };
 
     } catch (error) {
-      console.error('❌ ConsumptionService.getConsumptionStats Error:', error);
+      logger.error('❌ ConsumptionService.getConsumptionStats Error:', error);
       throw error;
     }
   }
@@ -284,7 +242,7 @@ class ConsumptionService {
       };
 
     } catch (error) {
-      console.error('❌ ConsumptionService.getMonthlyReport Error:', error);
+      logger.error('❌ ConsumptionService.getMonthlyReport Error:', error);
       throw error;
     }
   }
@@ -391,11 +349,11 @@ class ConsumptionService {
    */
   static async getExpenseHistory(userNo, period = 'recent', customMonth = null) {
     try {
-      console.log('소비내역 조회 시도 - 기간:', period, customMonth ? `(${customMonth}월)` : '');
+      logger.info('소비내역 조회 시도 - 기간:', period, customMonth ? `(${customMonth}월)` : '');
       
       // 기간별 날짜 범위 계산
       const dateRange = this.getDateRangeByPeriod(period, customMonth);
-      console.log('날짜 범위:', dateRange);
+      logger.info('날짜 범위:', dateRange);
       
       const consumptions = await this.getAllConsumptionsByUser(
         userNo,
@@ -409,7 +367,7 @@ class ConsumptionService {
         dateRange.endDate
       );
       
-      console.log('소비내역 조회 성공:', { 
+      logger.info('소비내역 조회 성공:', { 
         consumptionCount: consumptions.length,
         totalAmount: summary.totalAmount 
       });
@@ -422,48 +380,84 @@ class ConsumptionService {
       };
       
     } catch (error) {
-      console.error('소비내역 조회 실패:', error);
+      logger.error('소비내역 조회 실패:', error);
       return null;
     }
   }
 
   /**
-   * AI 서비스용 소비 내역 생성
+   * AI 서비스용 소비 내역 생성 (개선됨)
    */
   static async createConsumptionForAI(userNo, data) {
     try {
-      return await this.createVoiceConsumption({
+      logger.info(`AI 소비 내역 생성 시도 - 사용자: ${userNo}, 금액: ${data.amount}, 카테고리: ${data.category}`);
+      
+      if (!userNo || !data || !data.amount) {
+        logger.error('AI 소비 내역 생성 실패: 필수 데이터 누락', { userNo, data });
+        throw new Error('소비 내역 생성에 필요한 데이터가 부족합니다.');
+      }
+      
+      // 데이터 정제 및 기본값 설정
+      const cleanData = {
         userNo,
-        merchantName: data.merchantName,
-        amount: data.amount,
-        category: data.category,
-        transactionDate: data.transactionDate,
-        memo: data.memo
-      });
+        merchantName: data.merchantName || '음성입력',
+        amount: parseInt(data.amount) || 0,  // 확실히 숫자로 변환
+        category: data.category || '기타',
+        transactionDate: data.transactionDate || new Date().toISOString().split('T')[0],
+        memo: data.memo || '음성 입력으로 추가된 내역'
+      };
+      
+      // 금액이 유효한지 확인
+      if (cleanData.amount <= 0) {
+        logger.error('AI 소비 내역 생성 실패: 유효하지 않은 금액', { amount: cleanData.amount });
+        throw new Error('유효한 금액이 아닙니다.');
+      }
+
+      // 음성 입력용 간소화된 함수 호출
+      const consumptionNo = await this.createVoiceConsumption(cleanData);
+      
+      logger.info(`AI 소비 내역 생성 성공 - ID: ${consumptionNo}, 금액: ${cleanData.amount}`);
+      return consumptionNo;
+      
     } catch (error) {
-      console.error('❌ ConsumptionService.createConsumptionForAI Error:', error);
+      logger.error('❌ ConsumptionService.createConsumptionForAI Error:', error);
       throw error;
     }
   }
 
   /**
-   * 음성 입력용 간소화된 소비 내역 생성
+   * 음성 입력용 간소화된 소비 내역 생성 (개선됨)
    */
   static async createVoiceConsumption({ userNo, merchantName, amount, category, transactionDate, memo }) {
     try {
+      logger.info(`음성 소비 내역 생성 - 사용자: ${userNo}, 금액: ${amount}, 카테고리: ${category}`);
+      
+      // 트랜잭션 날짜가 문자열로 들어온 경우 날짜 객체로 변환
+      let parsedDate;
+      if (transactionDate && typeof transactionDate === 'string') {
+        parsedDate = new Date(transactionDate);
+        // 날짜가 유효하지 않으면 현재 날짜 사용
+        if (isNaN(parsedDate.getTime())) {
+          logger.warn(`유효하지 않은 날짜 형식(${transactionDate}), 현재 날짜로 대체`);
+          parsedDate = new Date();
+        }
+      } else {
+        parsedDate = new Date();
+      }
+      
       return await this.createConsumption({
         userNo,
         merchantName: merchantName || '음성입력',
-        amount,
+        amount: amount,
         category: category || '기타',
         paymentMethod: '현금',
-        transactionDate: transactionDate || new Date(),
+        transactionDate: parsedDate,
         location: null,
-        memo: memo || ''
+        memo: memo || '음성 입력으로 추가된 내역'
       });
 
     } catch (error) {
-      console.error('❌ ConsumptionService.createVoiceConsumption Error:', error);
+      logger.error('❌ ConsumptionService.createVoiceConsumption Error:', error);
       throw error;
     }
   }
