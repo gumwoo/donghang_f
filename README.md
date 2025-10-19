@@ -1,14 +1,9 @@
 #  동행 - 고령층을 위한 음성 기반 생활 관리 플랫폼
 
-<div align="center">
-<img src="https://img.shields.io/badge/React-18.3.1-61DAFB?style=for-the-badge&logo=react&logoColor=white" />
-@@ -9,118 +9,18 @@
-<img src="https://img.shields.io/badge/Docker-Deployed-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
-</div>
+
 
 ## 프로젝트 개요
 
-동행은 디지털 소외계층인 고령층을 위한 음성 우선 인터페이스 기반의 종합 생활 관리 플랫폼입니다.
 동행은 디지털 소외계층인 고령층을 위한 음성 우선 인터페이스 기반의 종합 생활 관리 플랫폼입니다.
 
 ### 배포 정보
@@ -115,8 +110,4 @@ docker-compose ps
 - **김우중**: 프론트엔드, AI 개발, QA
 - **전소영**: ai개발, 디자인, 기획
 
-## 🙏 오픈소스 라이브러리
-##  오픈소스 라이브러리
 
-- **React.js** - UI 프레임워크
-- **Node.js & Express** - 백엔드 서버
